@@ -21,7 +21,9 @@ def load_data():
     ndvi = gpd.read_file('ndvi_points.geojson')
     solar = gpd.read_file('solar_points.geojson')
 
-    # Precompute color values (0-255 range) so accessors are simple lookups, not math
+    # Rename to match our expected column names
+    buildings = buildings.rename(columns={'MAX': 'height_m', 'FIRST_BLDG_TYPE': 'building_type'})
+
     max_h = buildings['height_m'].quantile(0.98)
     buildings['color_r'] = 255
     buildings['color_g'] = (255 - (buildings['height_m'].clip(0, max_h) / max_h * 220)).astype(int)
