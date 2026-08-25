@@ -10,10 +10,10 @@ st.markdown("An interactive 2.5D digital twin of downtown Denver, combining LiDA
 
 @st.cache_data
 def load_data():
-     buildings = gpd.read_file('buildings_final.geojson')
-     lst = gpd.read_file('lst_points.geojson')
-     ndvi = gpd.read_file('ndvi_points.geojson')
-     solar = gpd.read_file('solar_points.geojson')
+    buildings = gpd.read_file('buildings_final.geojson')
+    lst = gpd.read_file('lst_points.geojson')
+    ndvi = gpd.read_file('ndvi_points.geojson')
+    solar = gpd.read_file('solar_points.geojson')
     return buildings, lst, ndvi, solar
 
 buildings, lst, ndvi, solar = load_data()
@@ -27,7 +27,6 @@ st.sidebar.markdown("---")
 st.sidebar.markdown(f"**Buildings analyzed:** {len(buildings)}")
 st.sidebar.markdown(f"**Data source:** DRCOG LiDAR 2020, Landsat 9, Sentinel-2")
 
-# Build map config dynamically based on checkboxes
 map1 = KeplerGl(height=700)
 map1.add_data(data=buildings, name='Denver Buildings')
 if show_lst:
