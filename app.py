@@ -21,25 +21,28 @@ def load_data():
     ndvi = gpd.read_file('ndvi_points.geojson')
     solar = gpd.read_file('solar_points.geojson')
 
-    # Rename to match our expected column names
     buildings = buildings.rename(columns={'MAX': 'height_m', 'FIRST_BLDG_TYPE': 'building_type'})
+    buildings['height_m'] = buildings['height_m'].fillna(0)
 
     max_h = buildings['height_m'].quantile(0.98)
     buildings['color_r'] = 255
-    buildings['color_g'] = (255 - (buildings['height_m'].clip(0, max_h) / max_h * 220)).astype(int)
+    buildings['color_g'] = (255 - (buildings['height_m'].clip(0, max_h) / max_h * 220)).fillna(0).astype(int)
     buildings['color_b'] = 40
 
+    lst['LST_celsius'] = lst['LST_celsius'].fillna(lst['LST_celsius'].mean())
     lst['color_r'] = 255
-    lst['color_g'] = (255 - (lst['LST_celsius'].clip(30, 60) - 30) / 30 * 255).astype(int)
+    lst['color_g'] = (255 - (lst['LST_celsius'].clip(30, 60) - 30) / 30 * 255).fillna(0).astype(int)
     lst['color_b'] = 60
 
+    ndvi['NDVI'] = ndvi['NDVI'].fillna(ndvi['NDVI'].mean())
     ndvi_min, ndvi_max = ndvi['NDVI'].quantile(0.02), ndvi['NDVI'].quantile(0.98)
-    ndvi['color_g'] = (60 + (ndvi['NDVI'].clip(ndvi_min, ndvi_max) - ndvi_min) / (ndvi_max - ndvi_min) * 180).astype(int)
-    ndvi['color_r'] = (150 - (ndvi['NDVI'].clip(ndvi_min, ndvi_max) - ndvi_min) / (ndvi_max - ndvi_min) * 120).astype(int)
+    ndvi['color_g'] = (60 + (ndvi['NDVI'].clip(ndvi_min, ndvi_max) - ndvi_min) / (ndvi_max - ndvi_min) * 180).fillna(60).astype(int)
+    ndvi['color_r'] = (150 - (ndvi['NDVI'].clip(ndvi_min, ndvi_max) - ndvi_min) / (ndvi_max - ndvi_min) * 120).fillna(150).astype(int)
 
+    solar['Solar_radiation'] = solar['Solar_radiation'].fillna(solar['Solar_radiation'].mean())
     solar_min, solar_max = solar['Solar_radiation'].quantile(0.02), solar['Solar_radiation'].quantile(0.98)
     solar['color_r'] = 255
-    solar['color_g'] = (60 + (solar['Solar_radiation'].clip(solar_min, solar_max) - solar_min) / (solar_max - solar_min) * 195).astype(int)
+    solar['color_g'] = (60 + (solar['Solar_radiation'].clip(solar_min, solar_max) - solar_min) / (solar_max - solar_min) * 195).fillna(60).astype(int)
     solar['color_b'] = 30
 
     return buildings, lst, ndvi, solar
