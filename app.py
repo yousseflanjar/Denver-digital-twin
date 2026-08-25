@@ -10,7 +10,7 @@ st.markdown("An interactive 2.5D digital twin of downtown Denver, combining LiDA
 
 @st.cache_data
 def load_data():
-    buildings = gpd.read_file('buildings_final.geojson')
+    buildings = gpd.read_file('buildings_final.geojson.json')
     lst = gpd.read_file('lst_points.geojson')
     ndvi = gpd.read_file('ndvi_points.geojson')
     solar = gpd.read_file('solar_points.geojson')
