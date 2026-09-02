@@ -72,14 +72,15 @@ buildings['color_r'] = cmap[idx, 0]
 buildings['color_g'] = cmap[idx, 1]
 buildings['color_b'] = cmap[idx, 2]
 
+buildings = buildings.reset_index(drop=True)
+buildings['display_id'] = buildings.index + 1
+
 ascending = mode == "Combined Livability"
 priority = buildings.nsmallest(top_n, col) if ascending else buildings.nlargest(top_n, col)
 priority_ids = set(priority['BUILDING_I'])
 buildings['is_priority'] = buildings['BUILDING_I'].isin(priority_ids)
 
 display_cols = list(dict.fromkeys(['display_id', 'height_m', 'building_type', col]))
-buildings = buildings.reset_index(drop=True)
-buildings['display_id'] = buildings.index + 1
 
 buildings_json = json.loads(buildings.to_json())
 
