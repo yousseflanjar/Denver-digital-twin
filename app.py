@@ -126,12 +126,54 @@ for i, (lc, label) in enumerate(zip(legend_cols, legend_labels)):
         unsafe_allow_html=True
     )
     
-st.markdown(f"### 📋 Top {top_n} Priority Buildings — {mode}")
-display_cols = list(dict.fromkeys(['height_m', 'building_type', col]))
-priority_display = priority[display_cols].rename(columns={'height_m': 'Height (m)', 'building_type': 'Type', col: mode})
-st.dataframe(priority_display.round(2), use_container_width=True, hide_index=True)
+map_placeholder = st.empty()
 
-csv = priority[display_cols].to_csv(index=False).encode('utf-8')
+legend_placeholder = st.container()
+
+st.markdown(f"### 📋 Top {top_n} Priority Buildings — {mode}")
+
+priority_display = priority[display_cols].rename(
+    columns={'height_m': 'Height (m)', 'building_type': 'Type', col: mode}
+).reset_index(drop=True)
+
+event = st.dataframe(
+    priority_display.round(2),
+    use_container_width=True,
+    hide_index=True,
+    on_select="rerun",
+    selection_mode="single-row"
+)
+
+# Default map view (whole downtown)
+view_state = pdk.ViewState(latitude=39.7444, longitude=-104.9954, zoom=14.5, pitch=55, bearing=15)
+
+selected_rows = event.selection.rows if event and event.selection else []
+if selected_rows:
+    selected_building = priority.reset_index(drop=True).iloc[selected_rows[0]]
+    centroid = selected_building.geometry.centroid
+    view_state = pdk.ViewState(latitude=centroid.y, longitude=centroid.x, zoom=18, pitch=60, bearing=15)
+    st.info(f"📍 Zoomed to selected building — Type: {selected_building['building_type']}, Height: {selected_building['height_m']:.1f}m")
+
+map_placeholder.pydeck_chart(pdk.Deck(
+    layers=layers,
+    initial_view_state=view_state,
+    map_provider="carto",
+    map_style="dark",
+    tooltip={"html": "<b>{building_type}</b><br/>Height: {height_m} m<br/>Score: {" + col + "}"}
+), height=650)
+
+with legend_placeholder:
+    legend_cols = st.columns(6)
+    legend_labels = ["Very Low", "Low", "Med-Low", "Med-High", "High", "Very High"]
+    for i, (lc, label) in enumerate(zip(legend_cols, legend_labels)):
+        color = cmap[i]
+        lc.markdown(
+            f'<div style="background-color:rgb({color[0]},{color[1]},{color[2]}); '
+            f'padding:6px; border-radius:4px; text-align:center; color:white; font-size:11px;">{label}</div>',
+            unsafe_allow_html=True
+        )
+
+csv = priority_display.to_csv(index=False).encode('utf-8')
 st.download_button("⬇️ Download this table as CSV", csv, f"{mode.replace(' ', '_')}_priority.csv", "text/csv")
 
 st.markdown("---")
