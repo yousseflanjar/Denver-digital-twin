@@ -116,7 +116,7 @@ st.pydeck_chart(pdk.Deck(
 ), height=650)
 
 st.markdown(f"### 📋 Top {top_n} Priority Buildings — {mode}")
-display_cols = ['BUILDING_I', 'height_m', 'building_type', col]
+display_cols = list(dict.fromkeys(['BUILDING_I', 'height_m', 'building_type', col]))
 st.dataframe(priority[display_cols].round(2), use_container_width=True)
 
 csv = priority[display_cols].to_csv(index=False).encode('utf-8')
