@@ -111,13 +111,25 @@ view_state = pdk.ViewState(latitude=39.7444, longitude=-104.9954, zoom=14.5, pit
 st.pydeck_chart(pdk.Deck(
     layers=layers,
     initial_view_state=view_state,
-    map_style="mapbox://styles/mapbox/dark-v10",
+    map_provider="carto",
+    map_style="dark",
     tooltip={"html": "<b>{building_type}</b><br/>Height: {height_m} m<br/>Score: {" + col + "}"}
 ), height=650)
 
+legend_cols = st.columns(6)
+legend_labels = ["Very Low", "Low", "Med-Low", "Med-High", "High", "Very High"]
+for i, (lc, label) in enumerate(zip(legend_cols, legend_labels)):
+    color = cmap[i]
+    lc.markdown(
+        f'<div style="background-color:rgb({color[0]},{color[1]},{color[2]}); '
+        f'padding:6px; border-radius:4px; text-align:center; color:white; font-size:11px;">{label}</div>',
+        unsafe_allow_html=True
+    )
+    
 st.markdown(f"### 📋 Top {top_n} Priority Buildings — {mode}")
-display_cols = list(dict.fromkeys(['BUILDING_I', 'height_m', 'building_type', col]))
-st.dataframe(priority[display_cols].round(2), use_container_width=True)
+display_cols = list(dict.fromkeys(['height_m', 'building_type', col]))
+priority_display = priority[display_cols].rename(columns={'height_m': 'Height (m)', 'building_type': 'Type', col: mode})
+st.dataframe(priority_display.round(2), use_container_width=True, hide_index=True)
 
 csv = priority[display_cols].to_csv(index=False).encode('utf-8')
 st.download_button("⬇️ Download this table as CSV", csv, f"{mode.replace(' ', '_')}_priority.csv", "text/csv")
