@@ -77,7 +77,9 @@ priority = buildings.nsmallest(top_n, col) if ascending else buildings.nlargest(
 priority_ids = set(priority['BUILDING_I'])
 buildings['is_priority'] = buildings['BUILDING_I'].isin(priority_ids)
 
-display_cols = list(dict.fromkeys(['height_m', 'building_type', col]))
+display_cols = list(dict.fromkeys(['display_id', 'height_m', 'building_type', col]))
+buildings = buildings.reset_index(drop=True)
+buildings['display_id'] = buildings.index + 1
 
 buildings_json = json.loads(buildings.to_json())
 
@@ -114,7 +116,7 @@ legend_placeholder = st.container()
 st.markdown(f"### 📋 Top {top_n} Priority Buildings — {mode}")
 
 priority_display = priority[display_cols].rename(
-    columns={'height_m': 'Height (m)', 'building_type': 'Type', col: mode}
+    columns={'display_id': 'Building #', 'height_m': 'Height (m)', 'building_type': 'Type', col: mode}
 ).reset_index(drop=True)
 
 event = st.dataframe(
