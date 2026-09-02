@@ -112,7 +112,7 @@ st.pydeck_chart(pdk.Deck(
     layers=layers,
     initial_view_state=view_state,
     map_provider="carto",
-    map_style="voyager",
+    map_style="light",
     tooltip={"html": "<b>{building_type}</b><br/>Height: {height_m} m<br/>Score: {" + col + "}"}
 ), height=650)
 
