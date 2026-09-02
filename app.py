@@ -1,137 +1,132 @@
 import streamlit as st
 import geopandas as gpd
 import pydeck as pdk
-import json
+import pandas as pd
+import numpy as np
 
 st.set_page_config(page_title="Denver GeoAI Digital Twin", layout="wide", initial_sidebar_state="expanded")
 
-st.markdown("""
-    <style>
-    .main .block-container {padding-top: 2rem;}
-    </style>
-""", unsafe_allow_html=True)
-
 st.title("🏙️ Denver GeoAI Urban Digital Twin")
-st.caption("An interactive 2.5D digital twin of downtown Denver — LiDAR-derived buildings combined with AI-driven environmental indicators.")
+st.caption("A GeoAI-powered decision-support tool for downtown Denver — combining validated LiDAR building data with composite urban vulnerability and opportunity indices.")
 
 @st.cache_data
 def load_data():
-    buildings = gpd.read_file('buildings_final.geojson.json')
+    buildings = gpd.read_file('buildings_enriched.geojson')
     lst = gpd.read_file('lst_points.geojson')
     ndvi = gpd.read_file('ndvi_points.geojson')
     solar = gpd.read_file('solar_points.geojson')
 
-    buildings = buildings.rename(columns={'MAX': 'height_m', 'FIRST_BLDG_TYPE': 'building_type'})
-    buildings['height_m'] = buildings['height_m'].fillna(0)
+    def make_colors(df, col, invert=False):
+        vmin, vmax = df[col].quantile(0.02), df[col].quantile(0.98)
+        norm = ((df[col].clip(vmin, vmax) - vmin) / (vmax - vmin)).fillna(0)
+        if invert:
+            norm = 1 - norm
+        df['color_r'] = (255 * norm).astype(int)
+        df['color_g'] = (255 * (1 - norm)).astype(int)
+        df['color_b'] = 60
+        return df
 
-    max_h = buildings['height_m'].quantile(0.98)
-    buildings['color_r'] = 255
-    buildings['color_g'] = (255 - (buildings['height_m'].clip(0, max_h) / max_h * 220)).fillna(0).astype(int)
-    buildings['color_b'] = 40
-
-    lst['LST_celsius'] = lst['LST_celsius'].fillna(lst['LST_celsius'].mean())
-    lst['color_r'] = 255
-    lst['color_g'] = (255 - (lst['LST_celsius'].clip(30, 60) - 30) / 30 * 255).fillna(0).astype(int)
-    lst['color_b'] = 60
-
-    ndvi['NDVI'] = ndvi['NDVI'].fillna(ndvi['NDVI'].mean())
-    ndvi_min, ndvi_max = ndvi['NDVI'].quantile(0.02), ndvi['NDVI'].quantile(0.98)
-    ndvi['color_g'] = (60 + (ndvi['NDVI'].clip(ndvi_min, ndvi_max) - ndvi_min) / (ndvi_max - ndvi_min) * 180).fillna(60).astype(int)
-    ndvi['color_r'] = (150 - (ndvi['NDVI'].clip(ndvi_min, ndvi_max) - ndvi_min) / (ndvi_max - ndvi_min) * 120).fillna(150).astype(int)
-
-    solar['Solar_radiation'] = solar['Solar_radiation'].fillna(solar['Solar_radiation'].mean())
-    solar_min, solar_max = solar['Solar_radiation'].quantile(0.02), solar['Solar_radiation'].quantile(0.98)
-    solar['color_r'] = 255
-    solar['color_g'] = (60 + (solar['Solar_radiation'].clip(solar_min, solar_max) - solar_min) / (solar_max - solar_min) * 195).fillna(60).astype(int)
-    solar['color_b'] = 30
+    lst = make_colors(lst, 'LST_celsius')
+    ndvi = make_colors(ndvi, 'NDVI', invert=True)
+    solar = make_colors(solar, 'Solar_radiation')
 
     return buildings, lst, ndvi, solar
 
-with st.spinner("Loading digital twin data..."):
+with st.spinner("Loading digital twin..."):
     buildings, lst, ndvi, solar = load_data()
 
-st.sidebar.header("🗺️ Layer Controls")
-show_lst = st.sidebar.checkbox("🔥 Heat Island (LST)", value=False)
-show_ndvi = st.sidebar.checkbox("🌳 Green Space (NDVI)", value=False)
-show_solar = st.sidebar.checkbox("☀️ Solar Potential", value=False)
+MODES = {
+    "Building Height": {"col": "height_m", "desc": "Real LiDAR-derived building heights (validated: MAE 2.80m).", "cmap": "warm"},
+    "Heat Vulnerability": {"col": "heat_vulnerability_score", "desc": "Priority zones for cooling interventions — combines surface heat, vegetation deficit, and population.", "cmap": "warm"},
+    "Green Space Equity": {"col": "green_equity_score", "desc": "Underserved areas lacking walkable green space — combines park distance, vegetation, and population.", "cmap": "green"},
+    "Solar Retrofit": {"col": "solar_retrofit_score", "desc": "Best candidates for solar panel installation — combines sun exposure and available roof area.", "cmap": "warm"},
+    "Combined Livability": {"col": "livability_score", "desc": "Overall livability synthesis: heat, green access, and solar potential combined.", "cmap": "livability"},
+}
+
+CMAP_RANGES = {
+    "warm": [[90, 24, 70], [144, 12, 63], [199, 0, 57], [227, 97, 28], [241, 146, 14], [255, 195, 0]],
+    "green": [[29, 112, 0], [76, 153, 0], [140, 181, 0], [181, 138, 0], [140, 94, 0], [90, 46, 0]],
+    "livability": [[144, 12, 63], [199, 0, 57], [241, 146, 14], [140, 181, 0], [76, 153, 0], [29, 112, 0]],
+}
+
+st.sidebar.header("🗺️ Analysis Mode")
+mode = st.sidebar.radio("Select map to display:", list(MODES.keys()))
+st.sidebar.caption(MODES[mode]["desc"])
 
 st.sidebar.markdown("---")
-st.sidebar.metric("Buildings Analyzed", f"{len(buildings):,}")
-st.sidebar.metric("Study Area", "~5 km²")
-st.sidebar.caption("**Data sources:** DRCOG LiDAR 2020, Denver Building Outlines 2022, Landsat 9, Sentinel-2, WorldPop")
+show_lst = st.sidebar.checkbox("🔥 Overlay: Heat Island (LST)", value=False)
+show_ndvi = st.sidebar.checkbox("🌳 Overlay: Green Space (NDVI)", value=False)
+show_solar = st.sidebar.checkbox("☀️ Overlay: Solar Radiation", value=False)
 
+st.sidebar.markdown("---")
+top_n = st.sidebar.slider("Highlight top N priority buildings", 5, 50, 15)
+
+col = MODES[mode]["col"]
+cmap = np.array(CMAP_RANGES[MODES[mode]["cmap"]])
+
+vmin, vmax = buildings[col].quantile(0.02), buildings[col].quantile(0.98)
+norm = ((buildings[col].clip(vmin, vmax) - vmin) / (vmax - vmin)).fillna(0)
+idx = (norm * (len(cmap) - 1)).astype(int).clip(0, len(cmap) - 1)
+buildings['color_r'] = cmap[idx, 0]
+buildings['color_g'] = cmap[idx, 1]
+buildings['color_b'] = cmap[idx, 2]
+
+ascending = mode == "Combined Livability"
+priority = buildings.nsmallest(top_n, col) if ascending else buildings.nlargest(top_n, col)
+priority_ids = set(priority['BUILDING_I'])
+buildings['is_priority'] = buildings['BUILDING_I'].isin(priority_ids)
+
+import json
 buildings_json = json.loads(buildings.to_json())
 
-buildings_layer = pdk.Layer(
-    "GeoJsonLayer",
-    buildings_json,
-    opacity=0.85,
-    stroked=True,
-    filled=True,
-    extruded=True,
-    wireframe=False,
-    get_elevation="properties.height_m",
-    elevation_scale=1,
-    get_fill_color="[properties.color_r, properties.color_g, properties.color_b, 210]",
-    get_line_color=[255, 255, 255, 80],
-    line_width_min_pixels=1,
-    pickable=True,
-)
-
-layers = [buildings_layer]
+layers = [
+    pdk.Layer(
+        "GeoJsonLayer",
+        buildings_json,
+        opacity=0.85,
+        stroked=True,
+        filled=True,
+        extruded=True,
+        wireframe=False,
+        get_elevation="properties.height_m",
+        get_fill_color="[properties.color_r, properties.color_g, properties.color_b, properties.is_priority ? 255 : 160]",
+        get_line_color="properties.is_priority ? [255,255,255,255] : [255,255,255,40]",
+        line_width_min_pixels=1,
+        pickable=True,
+    )
+]
 
 if show_lst:
-    layers.append(pdk.Layer(
-        "ScatterplotLayer",
-        lst,
-        get_position=["longitude", "latitude"],
-        get_fill_color=["color_r", "color_g", "color_b"],
-        get_radius=18,
-        opacity=0.55,
-        pickable=False,
-    ))
-
+    layers.append(pdk.Layer("ScatterplotLayer", lst, get_position=["longitude", "latitude"],
+                             get_fill_color=["color_r", "color_g", "color_b"], get_radius=18, opacity=0.45))
 if show_ndvi:
-    layers.append(pdk.Layer(
-        "ScatterplotLayer",
-        ndvi,
-        get_position=["longitude", "latitude"],
-        get_fill_color=["color_r", "color_g", 60],
-        get_radius=9,
-        opacity=0.5,
-        pickable=False,
-    ))
-
+    layers.append(pdk.Layer("ScatterplotLayer", ndvi, get_position=["longitude", "latitude"],
+                             get_fill_color=["color_r", "color_g", "color_b"], get_radius=9, opacity=0.4))
 if show_solar:
-    layers.append(pdk.Layer(
-        "ScatterplotLayer",
-        solar,
-        get_position=["longitude", "latitude"],
-        get_fill_color=["color_r", "color_g", "color_b"],
-        get_radius=14,
-        opacity=0.5,
-        pickable=False,
-    ))
+    layers.append(pdk.Layer("ScatterplotLayer", solar, get_position=["longitude", "latitude"],
+                             get_fill_color=["color_r", "color_g", "color_b"], get_radius=14, opacity=0.4))
 
-view_state = pdk.ViewState(
-    latitude=39.7444,
-    longitude=-104.9954,
-    zoom=14.5,
-    pitch=55,
-    bearing=15,
-)
+view_state = pdk.ViewState(latitude=39.7444, longitude=-104.9954, zoom=14.5, pitch=55, bearing=15)
 
 st.pydeck_chart(pdk.Deck(
     layers=layers,
     initial_view_state=view_state,
     map_style="mapbox://styles/mapbox/dark-v10",
-    tooltip={"html": "<b>Height:</b> {height_m} m<br/><b>Type:</b> {building_type}"}
-), height=700)
+    tooltip={"html": "<b>{building_type}</b><br/>Height: {height_m} m<br/>Score: {" + col + "}"}
+), height=650)
+
+st.markdown(f"### 📋 Top {top_n} Priority Buildings — {mode}")
+display_cols = ['BUILDING_I', 'height_m', 'building_type', col]
+st.dataframe(priority[display_cols].round(2), use_container_width=True)
+
+csv = priority[display_cols].to_csv(index=False).encode('utf-8')
+st.download_button("⬇️ Download this table as CSV", csv, f"{mode.replace(' ', '_')}_priority.csv", "text/csv")
 
 st.markdown("---")
-col1, col2, col3 = st.columns(3)
-col1.metric("Avg. Building Height", f"{buildings['height_m'].mean():.1f} m")
-col2.metric("Height Validation MAE", "2.80 m")
-col3.metric("Footprint Coverage", "~31%")
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("Buildings Analyzed", f"{len(buildings):,}")
+c2.metric("Height Validation MAE", "2.80 m")
+c3.metric("Footprint Coverage", "~31%")
+c4.metric("Study Area", "~5 km²")
 
-st.caption("Data sources: DRCOG LiDAR (2020), Denver Building Outlines (2022), Landsat 9, Sentinel-2, WorldPop — CC BY 3.0 / Public domain")
+st.caption("Data: DRCOG LiDAR (2020, CC BY 3.0), Denver Building Outlines (2022, CC BY 3.0), Landsat 9, Sentinel-2, WorldPop, OpenStreetMap (ODbL)")
