@@ -3,6 +3,7 @@ import geopandas as gpd
 import pydeck as pdk
 import pandas as pd
 import numpy as np
+import json
 
 st.set_page_config(page_title="Denver GeoAI Digital Twin", layout="wide", initial_sidebar_state="expanded")
 
@@ -76,7 +77,8 @@ priority = buildings.nsmallest(top_n, col) if ascending else buildings.nlargest(
 priority_ids = set(priority['BUILDING_I'])
 buildings['is_priority'] = buildings['BUILDING_I'].isin(priority_ids)
 
-import json
+display_cols = list(dict.fromkeys(['height_m', 'building_type', col]))
+
 buildings_json = json.loads(buildings.to_json())
 
 layers = [
@@ -106,28 +108,7 @@ if show_solar:
     layers.append(pdk.Layer("ScatterplotLayer", solar, get_position=["longitude", "latitude"],
                              get_fill_color=["color_r", "color_g", "color_b"], get_radius=14, opacity=0.4))
 
-view_state = pdk.ViewState(latitude=39.7444, longitude=-104.9954, zoom=14.5, pitch=55, bearing=15)
-
-st.pydeck_chart(pdk.Deck(
-    layers=layers,
-    initial_view_state=view_state,
-    map_provider="carto",
-    map_style="dark",
-    tooltip={"html": "<b>{building_type}</b><br/>Height: {height_m} m<br/>Score: {" + col + "}"}
-), height=650)
-
-legend_cols = st.columns(6)
-legend_labels = ["Very Low", "Low", "Med-Low", "Med-High", "High", "Very High"]
-for i, (lc, label) in enumerate(zip(legend_cols, legend_labels)):
-    color = cmap[i]
-    lc.markdown(
-        f'<div style="background-color:rgb({color[0]},{color[1]},{color[2]}); '
-        f'padding:6px; border-radius:4px; text-align:center; color:white; font-size:11px;">{label}</div>',
-        unsafe_allow_html=True
-    )
-    
 map_placeholder = st.empty()
-
 legend_placeholder = st.container()
 
 st.markdown(f"### 📋 Top {top_n} Priority Buildings — {mode}")
@@ -144,7 +125,6 @@ event = st.dataframe(
     selection_mode="single-row"
 )
 
-# Default map view (whole downtown)
 view_state = pdk.ViewState(latitude=39.7444, longitude=-104.9954, zoom=14.5, pitch=55, bearing=15)
 
 selected_rows = event.selection.rows if event and event.selection else []
