@@ -31,10 +31,15 @@ def load_data():
     ndvi = make_colors(ndvi, 'NDVI', invert=True)
     solar = make_colors(solar, 'Solar_radiation')
 
+    buildings = buildings.reset_index(drop=True)
+    buildings['display_id'] = buildings.index + 1
+
     return buildings, lst, ndvi, solar
 
 with st.spinner("Loading digital twin..."):
-    buildings, lst, ndvi, solar = load_data()
+    buildings_all, lst, ndvi, solar = load_data()
+
+TOTAL_BUILDINGS = len(buildings_all)
 
 MODES = {
     "Building Height": {"col": "height_m", "desc": "Real LiDAR-derived building heights (validated: MAE 2.80m).", "cmap": "warm"},
@@ -53,6 +58,7 @@ CMAP_RANGES = {
 st.sidebar.header("🗺️ Analysis Mode")
 mode = st.sidebar.radio("Select map to display:", list(MODES.keys()))
 st.sidebar.caption(MODES[mode]["desc"])
+col = MODES[mode]["col"]
 
 st.sidebar.markdown("---")
 show_lst = st.sidebar.checkbox("🔥 Overlay: Heat Island (LST)", value=False)
@@ -62,9 +68,28 @@ show_solar = st.sidebar.checkbox("☀️ Overlay: Solar Radiation", value=False)
 st.sidebar.markdown("---")
 top_n = st.sidebar.slider("Highlight top N priority buildings", 5, 50, 15)
 
-col = MODES[mode]["col"]
-cmap = np.array(CMAP_RANGES[MODES[mode]["cmap"]])
+st.sidebar.markdown("---")
+st.sidebar.subheader("🔍 Filters")
 
+building_types = sorted(buildings_all['building_type'].dropna().unique().tolist())
+selected_types = st.sidebar.multiselect("Building type", building_types, default=building_types)
+
+score_min = float(buildings_all[col].min())
+score_max = float(buildings_all[col].max())
+score_range = st.sidebar.slider(f"{mode} score range", score_min, score_max, (score_min, score_max))
+
+buildings = buildings_all[
+    buildings_all['building_type'].isin(selected_types) &
+    buildings_all[col].between(score_range[0], score_range[1])
+].copy()
+
+st.sidebar.caption(f"Showing {len(buildings):,} of {TOTAL_BUILDINGS:,} buildings")
+
+if len(buildings) == 0:
+    st.warning("No buildings match the current filters. Try widening your selection in the sidebar.")
+    st.stop()
+
+cmap = np.array(CMAP_RANGES[MODES[mode]["cmap"]])
 vmin, vmax = buildings[col].quantile(0.02), buildings[col].quantile(0.98)
 norm = ((buildings[col].clip(vmin, vmax) - vmin) / (vmax - vmin)).fillna(0)
 idx = (norm * (len(cmap) - 1)).astype(int).clip(0, len(cmap) - 1)
@@ -72,13 +97,10 @@ buildings['color_r'] = cmap[idx, 0]
 buildings['color_g'] = cmap[idx, 1]
 buildings['color_b'] = cmap[idx, 2]
 
-buildings = buildings.reset_index(drop=True)
-buildings['display_id'] = buildings.index + 1
-
 ascending = mode == "Combined Livability"
 priority = buildings.nsmallest(top_n, col) if ascending else buildings.nlargest(top_n, col)
-priority_ids = set(priority['BUILDING_I'])
-buildings['is_priority'] = buildings['BUILDING_I'].isin(priority_ids)
+priority_ids = set(priority['display_id'])
+buildings['is_priority'] = buildings['display_id'].isin(priority_ids)
 
 display_cols = list(dict.fromkeys(['display_id', 'height_m', 'building_type', col]))
 
@@ -135,7 +157,7 @@ if selected_rows:
     selected_building = priority.reset_index(drop=True).iloc[selected_rows[0]]
     centroid = selected_building.geometry.centroid
     view_state = pdk.ViewState(latitude=centroid.y, longitude=centroid.x, zoom=18, pitch=60, bearing=15)
-    st.info(f"📍 Zoomed to selected building — Type: {selected_building['building_type']}, Height: {selected_building['height_m']:.1f}m")
+    st.info(f"📍 Zoomed to Building #{selected_building['display_id']} — Type: {selected_building['building_type']}, Height: {selected_building['height_m']:.1f}m")
 
 map_placeholder.pydeck_chart(pdk.Deck(
     layers=layers,
@@ -161,7 +183,7 @@ st.download_button("⬇️ Download this table as CSV", csv, f"{mode.replace(' '
 
 st.markdown("---")
 c1, c2, c3, c4 = st.columns(4)
-c1.metric("Buildings Analyzed", f"{len(buildings):,}")
+c1.metric("Buildings Shown", f"{len(buildings):,}")
 c2.metric("Height Validation MAE", "2.80 m")
 c3.metric("Footprint Coverage", "~31%")
 c4.metric("Study Area", "~5 km²")
