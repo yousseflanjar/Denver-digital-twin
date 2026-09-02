@@ -142,7 +142,7 @@ map_placeholder.pydeck_chart(pdk.Deck(
     initial_view_state=view_state,
     map_provider="carto",
     map_style="dark",
-    tooltip={"html": "<b>{building_type}</b><br/>Height: {height_m} m<br/>Score: {" + col + "}"}
+    tooltip={"html": "<b>Building #{display_id}</b><br/>Type: {building_type}<br/>Height: {height_m} m<br/>Score: {" + col + "}"}
 ), height=650)
 
 with legend_placeholder:
