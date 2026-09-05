@@ -36,6 +36,32 @@ CMAP_RANGES = {
     "livability": [[144, 12, 63], [199, 0, 57], [241, 146, 14], [140, 181, 0], [76, 153, 0], [29, 112, 0]],
 }
 
+@st.dialog("Building Details")
+def show_building_details(b):
+    st.markdown(f"### Building #{int(b['display_id'])}")
+    st.markdown(f"**Type:** {b['building_type']}")
+    st.divider()
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Height", f"{b['height_m']:.1f} m")
+    m2.metric("Footprint", f"{b['Shape_Area']:.0f} m²")
+    m3.metric("Volume", f"{b['Volume_m3']:,.0f} m³")
+
+    st.divider()
+    st.markdown("**Scores**")
+    st.progress(min(float(b['heat_vulnerability_score']), 1.0), text=f"Heat Vulnerability: {b['heat_vulnerability_score']:.2f}")
+    st.progress(min(float(b['green_equity_score']), 1.0), text=f"Green Equity Gap: {b['green_equity_score']:.2f}")
+    st.progress(min(float(b['solar_retrofit_score']), 1.0), text=f"Solar Retrofit: {b['solar_retrofit_score']:.2f}")
+    st.progress(min(float(b['livability_score']), 1.0), text=f"Livability: {b['livability_score']:.2f}")
+
+    st.divider()
+    st.markdown("**Underlying Data**")
+    c1, c2 = st.columns(2)
+    c1.caption(f"🌡️ Surface Temp: {b['lst_celsius']:.1f} °C")
+    c1.caption(f"🌳 NDVI: {b['ndvi']:.2f}")
+    c2.caption(f"🏞️ Distance to park: {b['dist_to_park_m']:.0f} m")
+    c2.caption(f"👥 Nearby population: {b['population_nearby']:.0f}")
+
 st.sidebar.header("🗺️ Analysis Mode")
 mode = st.sidebar.radio("Select map to display:", list(MODES.keys()))
 st.sidebar.caption(MODES[mode]["desc"])
@@ -99,14 +125,8 @@ layers = [
     )
 ]
 
-map_col, detail_col = st.columns([2.2, 1])
-
-with map_col:
-    map_placeholder = st.empty()
-    legend_placeholder = st.container()
-
-with detail_col:
-    detail_placeholder = st.container()
+map_placeholder = st.empty()
+legend_placeholder = st.container()
 
 st.markdown(f"### 📋 Top {top_n} Priority Buildings — {mode}")
 
@@ -123,13 +143,13 @@ event = st.dataframe(
 )
 
 view_state = pdk.ViewState(latitude=39.7444, longitude=-104.9954, zoom=14.5, pitch=55, bearing=15)
-selected_building = None
 
 selected_rows = event.selection.rows if event and event.selection else []
 if selected_rows:
     selected_building = priority.reset_index(drop=True).iloc[selected_rows[0]]
     centroid = selected_building.geometry.centroid
     view_state = pdk.ViewState(latitude=centroid.y, longitude=centroid.x, zoom=18, pitch=60, bearing=15)
+    show_building_details(selected_building)
 
 map_placeholder.pydeck_chart(pdk.Deck(
     layers=layers,
@@ -149,30 +169,6 @@ with legend_placeholder:
             f'padding:6px; border-radius:4px; text-align:center; color:white; font-size:11px;">{label}</div>',
             unsafe_allow_html=True
         )
-
-with detail_placeholder:
-    st.markdown("#### 🏢 Building Details")
-    if selected_building is not None:
-        st.markdown(f"**Building #{int(selected_building['display_id'])}**")
-        st.markdown(f"**Type:** {selected_building['building_type']}")
-        st.divider()
-        st.metric("Height", f"{selected_building['height_m']:.1f} m")
-        st.metric("Footprint Area", f"{selected_building['Shape_Area']:.0f} m²")
-        st.metric("Volume", f"{selected_building['Volume_m3']:,.0f} m³")
-        st.divider()
-        st.markdown("**Scores**")
-        st.progress(min(float(selected_building['heat_vulnerability_score']), 1.0), text=f"Heat Vulnerability: {selected_building['heat_vulnerability_score']:.2f}")
-        st.progress(min(float(selected_building['green_equity_score']), 1.0), text=f"Green Equity Gap: {selected_building['green_equity_score']:.2f}")
-        st.progress(min(float(selected_building['solar_retrofit_score']), 1.0), text=f"Solar Retrofit: {selected_building['solar_retrofit_score']:.2f}")
-        st.progress(min(float(selected_building['livability_score']), 1.0), text=f"Livability: {selected_building['livability_score']:.2f}")
-        st.divider()
-        st.markdown("**Underlying Data**")
-        st.caption(f"Surface Temp: {selected_building['lst_celsius']:.1f} °C")
-        st.caption(f"NDVI: {selected_building['ndvi']:.2f}")
-        st.caption(f"Distance to nearest park: {selected_building['dist_to_park_m']:.0f} m")
-        st.caption(f"Nearby population estimate: {selected_building['population_nearby']:.0f}")
-    else:
-        st.info("👆 Click a row in the table below to see full building details here.")
 
 csv = priority_display.to_csv(index=False).encode('utf-8')
 st.download_button("⬇️ Download this table as CSV", csv, f"{mode.replace(' ', '_')}_priority.csv", "text/csv")
