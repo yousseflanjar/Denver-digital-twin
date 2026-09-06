@@ -113,26 +113,15 @@ if view_type == "Single Index":
     buildings['color_g'] = cmap[idx, 1]
     buildings['color_b'] = cmap[idx, 2]
 else:
-    a_median = buildings[col_a].median()
-    b_median = buildings[col_b].median()
-    high_a = buildings[col_a] >= a_median
-    high_b = buildings[col_b] >= b_median
-
-    QUAD_COLORS = {
-        (False, False): (70, 70, 70),
-        (True, False): (220, 60, 60),
-        (False, True): (60, 90, 220),
-        (True, True): (230, 60, 220),
-    }
-    colors = [QUAD_COLORS[(a, b)] for a, b in zip(high_a, high_b)]
-    buildings['color_r'] = [c[0] for c in colors]
-    buildings['color_g'] = [c[1] for c in colors]
-    buildings['color_b'] = [c[2] for c in colors]
-
     a_min, a_max = buildings[col_a].quantile(0.02), buildings[col_a].quantile(0.98)
     b_min, b_max = buildings[col_b].quantile(0.02), buildings[col_b].quantile(0.98)
     norm_a = ((buildings[col_a].clip(a_min, a_max) - a_min) / (a_max - a_min)).fillna(0)
     norm_b = ((buildings[col_b].clip(b_min, b_max) - b_min) / (b_max - b_min)).fillna(0)
+
+    buildings['color_r'] = (40 + norm_a * 215).astype(int)
+    buildings['color_g'] = (40 + (1 - np.maximum(norm_a, norm_b)) * 100).astype(int)
+    buildings['color_b'] = (40 + norm_b * 215).astype(int)
+
     buildings['combined_score'] = norm_a * norm_b
     cmap = np.array(CMAP_RANGES["livability"])
 
