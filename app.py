@@ -71,13 +71,12 @@ if view_type == "Single Index":
     col = MODES[mode]["col"]
 else:
     compare_options = [k for k in MODES.keys() if k != "Building Height"]
-    mode_a = st.sidebar.selectbox("Index A", compare_options, index=0)
-    mode_b = st.sidebar.selectbox("Index B", compare_options, index=2)
+    mode_a = st.sidebar.selectbox("Index A (left map)", compare_options, index=0)
+    mode_b = st.sidebar.selectbox("Index B (right map)", compare_options, index=2)
     col_a = MODES[mode_a]["col"]
     col_b = MODES[mode_b]["col"]
     mode = f"{mode_a} vs {mode_b}"
     col = col_a
-    st.sidebar.caption(f"Red = high {mode_a} only · Blue = high {mode_b} only · Bright/white = high in BOTH")
 
 st.sidebar.markdown("---")
 top_n = st.sidebar.slider("Highlight top N priority buildings", 5, 50, 15)
@@ -104,25 +103,23 @@ if len(buildings) == 0:
     st.warning("No buildings match the current filters. Try widening your selection in the sidebar.")
     st.stop()
 
+def colorize(series, cmap_name):
+    cm = np.array(CMAP_RANGES[cmap_name])
+    vmin, vmax = series.quantile(0.02), series.quantile(0.98)
+    n = ((series.clip(vmin, vmax) - vmin) / (vmax - vmin)).fillna(0)
+    i = (n * (len(cm) - 1)).astype(int).clip(0, len(cm) - 1)
+    return cm[i, 0], cm[i, 1], cm[i, 2]
+
 if view_type == "Single Index":
     cmap = np.array(CMAP_RANGES[MODES[mode]["cmap"]])
-    vmin, vmax = buildings[col].quantile(0.02), buildings[col].quantile(0.98)
-    norm = ((buildings[col].clip(vmin, vmax) - vmin) / (vmax - vmin)).fillna(0)
-    idx = (norm * (len(cmap) - 1)).astype(int).clip(0, len(cmap) - 1)
-    buildings['color_r'] = cmap[idx, 0]
-    buildings['color_g'] = cmap[idx, 1]
-    buildings['color_b'] = cmap[idx, 2]
+    buildings['color_r'], buildings['color_g'], buildings['color_b'] = colorize(buildings[col], MODES[mode]["cmap"])
 else:
-    a_min, a_max = buildings[col_a].quantile(0.02), buildings[col_a].quantile(0.98)
-    b_min, b_max = buildings[col_b].quantile(0.02), buildings[col_b].quantile(0.98)
-    norm_a = ((buildings[col_a].clip(a_min, a_max) - a_min) / (a_max - a_min)).fillna(0)
-    norm_b = ((buildings[col_b].clip(b_min, b_max) - b_min) / (b_max - b_min)).fillna(0)
+    buildings['a_r'], buildings['a_g'], buildings['a_b'] = colorize(buildings[col_a], MODES[mode_a]["cmap"])
+    buildings['b_r'], buildings['b_g'], buildings['b_b'] = colorize(buildings[col_b], MODES[mode_b]["cmap"])
 
-    buildings['color_r'] = (40 + norm_a * 215).astype(int)
-    buildings['color_g'] = (40 + (1 - np.maximum(norm_a, norm_b)) * 100).astype(int)
-    buildings['color_b'] = (40 + norm_b * 215).astype(int)
-
-    buildings['combined_score'] = norm_a * norm_b
+    norm_a = (buildings[col_a] - buildings[col_a].min()) / (buildings[col_a].max() - buildings[col_a].min())
+    norm_b = (buildings[col_b] - buildings[col_b].min()) / (buildings[col_b].max() - buildings[col_b].min())
+    buildings['combined_score'] = (norm_a.fillna(0) * norm_b.fillna(0))
     cmap = np.array(CMAP_RANGES["livability"])
 
 if view_type == "Compare Two Indices":
@@ -141,25 +138,49 @@ else:
 
 buildings_json = json.loads(buildings.to_json())
 
-layers = [
-    pdk.Layer(
-        "GeoJsonLayer",
-        buildings_json,
-        opacity=0.85,
-        stroked=True,
-        filled=True,
-        extruded=True,
-        wireframe=False,
-        get_elevation="properties.height_m",
-        get_fill_color="[properties.color_r, properties.color_g, properties.color_b, properties.is_priority ? 255 : 160]",
+if view_type == "Compare Two Indices":
+    layer_a = pdk.Layer(
+        "GeoJsonLayer", buildings_json, opacity=0.85, stroked=True, filled=True,
+        extruded=True, wireframe=False, get_elevation="properties.height_m",
+        get_fill_color="[properties.a_r, properties.a_g, properties.a_b, properties.is_priority ? 255 : 160]",
         get_line_color="properties.is_priority ? [255,255,255,255] : [255,255,255,40]",
-        line_width_min_pixels=1,
-        pickable=True,
+        line_width_min_pixels=1, pickable=True,
     )
-]
+    layer_b = pdk.Layer(
+        "GeoJsonLayer", buildings_json, opacity=0.85, stroked=True, filled=True,
+        extruded=True, wireframe=False, get_elevation="properties.height_m",
+        get_fill_color="[properties.b_r, properties.b_g, properties.b_b, properties.is_priority ? 255 : 160]",
+        get_line_color="properties.is_priority ? [255,255,255,255] : [255,255,255,40]",
+        line_width_min_pixels=1, pickable=True,
+    )
+else:
+    layers = [
+        pdk.Layer(
+            "GeoJsonLayer",
+            buildings_json,
+            opacity=0.85,
+            stroked=True,
+            filled=True,
+            extruded=True,
+            wireframe=False,
+            get_elevation="properties.height_m",
+            get_fill_color="[properties.color_r, properties.color_g, properties.color_b, properties.is_priority ? 255 : 160]",
+            get_line_color="properties.is_priority ? [255,255,255,255] : [255,255,255,40]",
+            line_width_min_pixels=1,
+            pickable=True,
+        )
+    ]
 
-map_placeholder = st.empty()
-legend_placeholder = st.container()
+view_state = pdk.ViewState(latitude=39.7444, longitude=-104.9954, zoom=14.5, pitch=55, bearing=15)
+
+if view_type == "Compare Two Indices":
+    map_col_a, map_col_b = st.columns(2)
+    map_placeholder_a = map_col_a.empty()
+    map_placeholder_b = map_col_b.empty()
+    st.caption(f"Left: **{mode_a}** &nbsp;&nbsp;|&nbsp;&nbsp; Right: **{mode_b}** — same buildings, same camera, different scoring lens.")
+else:
+    map_placeholder = st.empty()
+    legend_placeholder = st.container()
 
 st.markdown(f"### 📋 Top {top_n} Priority Buildings — {mode}")
 
@@ -181,8 +202,6 @@ event = st.dataframe(
     selection_mode="single-row"
 )
 
-view_state = pdk.ViewState(latitude=39.7444, longitude=-104.9954, zoom=14.5, pitch=55, bearing=15)
-
 selected_rows = event.selection.rows if event and event.selection else []
 if selected_rows:
     selected_building = priority.reset_index(drop=True).iloc[selected_rows[0]]
@@ -190,17 +209,29 @@ if selected_rows:
     view_state = pdk.ViewState(latitude=centroid.y, longitude=centroid.x, zoom=18, pitch=60, bearing=15)
     show_building_details(selected_building)
 
-tooltip_score = f"{mode_a}: {{{col_a}}}<br/>{mode_b}: {{{col_b}}}" if view_type == "Compare Two Indices" else f"Score: {{{col}}}"
-map_placeholder.pydeck_chart(pdk.Deck(
-    layers=layers,
-    initial_view_state=view_state,
-    map_provider="carto",
-    map_style="dark",
-    tooltip={"html": f"<b>Building #{{display_id}}</b><br/>Type: {{building_type}}<br/>Height: {{height_m}} m<br/>{tooltip_score}"}
-), height=650)
+if view_type == "Compare Two Indices":
+    map_placeholder_a.pydeck_chart(pdk.Deck(
+        layers=[layer_a], initial_view_state=view_state, map_provider="carto", map_style="dark",
+        tooltip={"html": f"<b>Building #{{display_id}}</b><br/>{mode_a}: {{{col_a}}}"}
+    ), height=550)
+    map_placeholder_b.pydeck_chart(pdk.Deck(
+        layers=[layer_b], initial_view_state=view_state, map_provider="carto", map_style="dark",
+        tooltip={"html": f"<b>Building #{{display_id}}</b><br/>{mode_b}: {{{col_b}}}"}
+    ), height=550)
 
-with legend_placeholder:
-    if view_type == "Single Index":
+    st.markdown(f"### 📊 {mode_a} vs {mode_b}")
+    scatter_df = buildings[[col_a, col_b]].rename(columns={col_a: mode_a, col_b: mode_b})
+    st.scatter_chart(scatter_df, x=mode_a, y=mode_b, size=20)
+    st.caption("Each dot is a building. Top-right corner = high in both indices (best overlap candidates). Bottom-left = low in both.")
+else:
+    map_placeholder.pydeck_chart(pdk.Deck(
+        layers=layers,
+        initial_view_state=view_state,
+        map_provider="carto",
+        map_style="dark",
+        tooltip={"html": f"<b>Building #{{display_id}}</b><br/>Type: {{building_type}}<br/>Height: {{height_m}} m<br/>Score: {{{col}}}"}
+    ), height=650)
+    with legend_placeholder:
         legend_cols = st.columns(6)
         legend_labels = ["Very Low", "Low", "Med-Low", "Med-High", "High", "Very High"]
         for i, (lc, label) in enumerate(zip(legend_cols, legend_labels)):
@@ -210,21 +241,7 @@ with legend_placeholder:
                 f'padding:6px; border-radius:4px; text-align:center; color:white; font-size:11px;">{label}</div>',
                 unsafe_allow_html=True
             )
-    else:
-        lc1, lc2, lc3, lc4 = st.columns(4)
-        lc1.markdown('<div style="background-color:rgb(40,140,40);padding:6px;border-radius:4px;text-align:center;color:white;font-size:11px;">Both Low</div>', unsafe_allow_html=True)
-        lc2.markdown(f'<div style="background-color:rgb(220,40,40);padding:6px;border-radius:4px;text-align:center;color:white;font-size:11px;">High {mode_a} only</div>', unsafe_allow_html=True)
-        lc3.markdown(f'<div style="background-color:rgb(40,40,220);padding:6px;border-radius:4px;text-align:center;color:white;font-size:11px;">High {mode_b} only</div>', unsafe_allow_html=True)
-        lc4.markdown('<div style="background-color:rgb(220,40,220);padding:6px;border-radius:4px;text-align:center;color:white;font-size:11px;">High in BOTH</div>', unsafe_allow_html=True)
 
-if view_type == "Compare Two Indices":
-    st.markdown(f"### 📊 {mode_a} vs {mode_b}")
-    scatter_df = buildings[[col_a, col_b, 'display_id', 'building_type']].rename(
-        columns={col_a: mode_a, col_b: mode_b}
-    )
-    st.scatter_chart(scatter_df, x=mode_a, y=mode_b, size=20)
-    st.caption("Each dot is a building. Top-right corner = high in both indices (best overlap candidates). Bottom-left = low in both.")
-    
 csv = priority_display.to_csv(index=False).encode('utf-8')
 st.download_button("⬇️ Download this table as CSV", csv, f"{mode.replace(' ', '_').replace('vs', 'vs_')}_priority.csv", "text/csv")
 
